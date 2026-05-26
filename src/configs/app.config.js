@@ -1,89 +1,57 @@
+/**
+ * Application Configuration
+ * Centralized configuration management
+ * 
+ * Security: Environment-based configuration, secrets management
+ */
+
 require('dotenv').config();
 
 module.exports = {
-  app: {
-    name: 'AI-Powered Logistics Monitoring System',
-    version: '1.0.0',
-    env: process.env.NODE_ENV || 'development',
-    port: parseInt(process.env.PORT || '3000', 10),
-    apiPrefix: '/api/v1'
-  },
-
-  tls: {
-    enabled: process.env.TLS_ENABLED === 'true',
-    keyPath: process.env.TLS_KEY_PATH || './certs/key.pem',
-    certPath: process.env.TLS_CERT_PATH || './certs/cert.pem',
-    minVersion: 'TLSv1.3'
-  },
-
-  cors: {
-    allowedOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
-    credentials: true
-  },
-
+  env: process.env.NODE_ENV || 'development',
+  port: process.env.PORT || 3000,
+  
   database: {
     host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    name: process.env.DB_NAME || 'logistics_db',
+    port: process.env.DB_PORT || 5432,
+    database: process.env.DB_NAME || 'logistics_db',
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
-    ssl: process.env.DB_SSL === 'true',
-    pool: {
-      min: parseInt(process.env.DB_POOL_MIN || '2', 10),
-      max: parseInt(process.env.DB_POOL_MAX || '10', 10)
-    },
-    encryption: {
-      algorithm: 'aes-256-gcm',
-      keyPath: process.env.DB_ENCRYPTION_KEY_PATH || './keys/db-encryption.key'
-    }
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
   },
-
+  
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    port: process.env.REDIS_PORT || 6379,
     password: process.env.REDIS_PASSWORD || '',
-    db: parseInt(process.env.REDIS_DB || '0', 10),
-    tls: process.env.REDIS_TLS === 'true',
-    keyPrefix: 'logistics:',
-    ttl: parseInt(process.env.REDIS_TTL || '3600', 10)
+    db: 0
   },
-
+  
   kafka: {
-    brokers: process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'],
+    brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
     clientId: 'logistics-monitoring-system',
-    groupId: 'logistics-consumer-group',
-    ssl: process.env.KAFKA_SSL === 'true',
-    sasl: {
-      mechanism: process.env.KAFKA_SASL_MECHANISM || 'plain',
-      username: process.env.KAFKA_USERNAME || '',
-      password: process.env.KAFKA_PASSWORD || ''
-    },
-    topics: {
-      trackingEvents: 'tracking-events',
-      predictions: 'ai-predictions',
-      alerts: 'alert-notifications'
-    }
+    groupId: 'logistics-consumer-group'
   },
-
+  
   jwt: {
     secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-    expiresIn: process.env.JWT_EXPIRES_IN || '1h',
-    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
-    algorithm: 'HS256',
-    issuer: 'logistics-monitoring-system'
+    expiresIn: '24h'
   },
-
-  security: {
-    encryption: {
-      algorithm: 'aes-256-gcm',
-      keyLength: 32,
-      ivLength: 16,
-      saltLength: 64,
-      tagLength: 16
-    },
-    sensitiveFields: [
-      'ssn', 'credit_card', 'passport', 'driver_license',
-      'medical_record', 'bank_account', 'email', 'phone'
-    ]
-  }
+  
+  encryption: {
+    key: process.env.ENCRYPTION_KEY || 'your-encryption-key-change-in-production'
+  },
+  
+  cors: {
+    allowedOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',')
+  },
+  
+  rateLimit: {
+    windowMs: 15 * 60 * 1000,
+    max: 100
+  },
+  
+  logLevel: process.env.LOG_LEVEL || 'info'
 };

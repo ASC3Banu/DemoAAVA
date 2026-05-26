@@ -1,55 +1,44 @@
+/**
+ * Database Configuration
+ * PostgreSQL connection pool management
+ * 
+ * Security: Connection pooling, SSL/TLS support
+ */
+
 const { Pool } = require('pg');
-const logger = require('./logger.config');
 const config = require('./app.config');
+const logger = require('../utils/logger');
 
-class DatabaseConfig {
-  constructor() {
-    this.pool = null;
+const pool = new Pool({
+  host: config.database.host,
+  port: config.database.port,
+  database: config.database.database,
+  user: config.database.user,
+  password: config.database.password,
+  max: config.database.max,
+  idleTimeoutMillis: config.database.idleTimeoutMillis,
+  connectionTimeoutMillis: config.database.connectionTimeoutMillis,
+  ssl: config.env === 'production' ? { rejectUnauthorized: false } : false
+});
+
+pool.on('error', (err) => {
+  logger.error('Unexpected database error:', err);
+  process.exit(-1);
+});
+
+const initializeDatabase = async () => {
+  try {
+    const client = await pool.connect();
+    await client.query('SELECT NOW()');
+    client.release();
+    logger.info('Database connection pool initialized');
+  } catch (error) {
+    logger.error('Failed to initialize database:', error);
+    throw error;
   }
+};
 
-  async connect() {
-    try {
-      this.pool = new Pool({
-        host: config.database.host,
-        port: config.database.port,
-        database: config.database.name,
-        user: config.database.user,
-        password: config.database.password,
-        ssl: config.database.ssl ? { rejectUnauthorized: false } : false,
-        min: config.database.pool.min,
-        max: config.database.pool.max,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 2000
-      });
-
-      await this.pool.query('SELECT NOW()');
-      logger.info('PostgreSQL database connected successfully');
-      return this.pool;
-    } catch (error) {
-      logger.error('Database connection failed', { error: error.message });
-      throw error;
-    }
-  }
-
-  async query(text, params) {
-    const start = Date.now();
-    try {
-      const result = await this.pool.query(text, params);
-      const duration = Date.now() - start;
-      logger.debug('Executed query', { text, duration, rows: result.rowCount });
-      return result;
-    } catch (error) {
-      logger.error('Query execution failed', { text, error: error.message });
-      throw error;
-    }
-  }
-
-  async disconnect() {
-    if (this.pool) {
-      await this.pool.end();
-      logger.info('Database connection closed');
-    }
-  }
-}
-
-module.exports = new DatabaseConfig();
+module.exports = {
+  pool,
+  initializeDatabase
+};

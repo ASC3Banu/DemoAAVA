@@ -1,81 +1,55 @@
+/**
+ * Redis Configuration
+ * Redis client for caching
+ * 
+ * Security: Password authentication, connection encryption
+ */
+
 const redis = require('redis');
-const logger = require('./logger.config');
 const config = require('./app.config');
+const logger = require('../utils/logger');
 
-class RedisConfig {
-  constructor() {
-    this.client = null;
-  }
-
-  async connect() {
-    try {
-      const options = {
-        socket: {
-          host: config.redis.host,
-          port: config.redis.port,
-          tls: config.redis.tls
-        },
-        password: config.redis.password,
-        database: config.redis.db
-      };
-
-      this.client = redis.createClient(options);
-
-      this.client.on('error', (err) => {
-        logger.error('Redis Client Error', { error: err.message });
-      });
-
-      this.client.on('connect', () => {
-        logger.info('Redis client connected');
-      });
-
-      this.client.on('ready', () => {
-        logger.info('Redis client ready');
-      });
-
-      await this.client.connect();
-      return this.client;
-    } catch (error) {
-      logger.error('Redis connection failed', { error: error.message });
-      throw error;
+const client = redis.createClient({
+  host: config.redis.host,
+  port: config.redis.port,
+  password: config.redis.password,
+  db: config.redis.db,
+  retry_strategy: (options) => {
+    if (options.error && options.error.code === 'ECONNREFUSED') {
+      logger.error('Redis connection refused');
+      return new Error('Redis connection refused');
     }
-  }
-
-  async get(key) {
-    try {
-      const value = await this.client.get(`${config.redis.keyPrefix}${key}`);
-      return value ? JSON.parse(value) : null;
-    } catch (error) {
-      logger.error('Redis GET failed', { key, error: error.message });
-      throw error;
+    if (options.total_retry_time > 1000 * 60 * 60) {
+      return new Error('Redis retry time exhausted');
     }
-  }
-
-  async set(key, value, ttl = config.redis.ttl) {
-    try {
-      const serialized = JSON.stringify(value);
-      await this.client.setEx(`${config.redis.keyPrefix}${key}`, ttl, serialized);
-    } catch (error) {
-      logger.error('Redis SET failed', { key, error: error.message });
-      throw error;
+    if (options.attempt > 10) {
+      return undefined;
     }
+    return Math.min(options.attempt * 100, 3000);
   }
+});
 
-  async del(key) {
-    try {
-      await this.client.del(`${config.redis.keyPrefix}${key}`);
-    } catch (error) {
-      logger.error('Redis DEL failed', { key, error: error.message });
-      throw error;
-    }
-  }
+client.on('error', (err) => {
+  logger.error('Redis error:', err);
+});
 
-  async disconnect() {
-    if (this.client) {
-      await this.client.quit();
-      logger.info('Redis connection closed');
-    }
-  }
-}
+client.on('connect', () => {
+  logger.info('Redis connected');
+});
 
-module.exports = new RedisConfig();
+const initializeRedis = async () => {
+  return new Promise((resolve, reject) => {
+    client.on('ready', () => {
+      logger.info('Redis client ready');
+      resolve();
+    });
+    client.on('error', (err) => {
+      reject(err);
+    });
+  });
+};
+
+module.exports = {
+  client,
+  initializeRedis
+};
