@@ -1,63 +1,52 @@
-class Shipment {
-  constructor(data) {
-    this.id = data.id;
-    this.trackingNumber = data.tracking_number;
-    this.originLocation = data.origin_location;
-    this.destinationLocation = data.destination_location;
-    this.currentLocation = data.current_location;
-    this.status = data.status;
-    this.transportMode = data.transport_mode;
-    this.carrierId = data.carrier_id;
-    this.estimatedDelivery = data.estimated_delivery;
-    this.actualDelivery = data.actual_delivery;
-    this.cargoDetails = data.cargo_details;
-    this.createdAt = data.created_at;
-    this.updatedAt = data.updated_at;
-    this.createdBy = data.created_by;
-  }
+/**
+ * Shipment Model
+ * Defines the shipment data structure and validation
+ */
 
-  static fromDatabase(row) {
-    return new Shipment(row);
-  }
+const Joi = require('joi');
 
-  toJSON() {
-    return {
-      shipment_id: this.id,
-      tracking_number: this.trackingNumber,
-      origin_location: this.originLocation,
-      destination_location: this.destinationLocation,
-      current_location: this.currentLocation,
-      status: this.status,
-      transport_mode: this.transportMode,
-      carrier_id: this.carrierId,
-      estimated_delivery: this.estimatedDelivery,
-      actual_delivery: this.actualDelivery,
-      cargo_details: this.cargoDetails,
-      created_at: this.createdAt,
-      updated_at: this.updatedAt
-    };
-  }
+const shipmentSchema = Joi.object({
+  shipment_id: Joi.string().pattern(/^SHP-[0-9]{4}-[0-9]{6}$/).required(),
+  origin: Joi.string().max(255).required(),
+  destination: Joi.string().max(255).required(),
+  departure_time: Joi.date().iso().required(),
+  arrival_time: Joi.date().iso().min(Joi.ref('departure_time')).required(),
+  carrier: Joi.string().max(100).optional(),
+  transport_mode: Joi.string().valid('air', 'sea', 'road', 'rail', 'multimodal').optional(),
+  status: Joi.string().valid('created', 'in_transit', 'delayed', 'delivered', 'cancelled').required(),
+  current_location: Joi.string().max(500).optional(),
+  actual_departure_time: Joi.date().iso().optional(),
+  estimated_arrival_time: Joi.date().iso().optional(),
+  userId: Joi.string().required(),
+  organizationId: Joi.string().required(),
+  created_at: Joi.date().iso().required(),
+  updated_at: Joi.date().iso().required()
+});
 
-  isDelayed() {
-    if (!this.estimatedDelivery) return false;
-    const now = new Date();
-    const estimated = new Date(this.estimatedDelivery);
-    return now > estimated && this.status !== 'delivered';
-  }
+const createShipmentSchema = Joi.object({
+  origin: Joi.string().max(255).required(),
+  destination: Joi.string().max(255).required(),
+  departure_time: Joi.date().iso().required(),
+  arrival_time: Joi.date().iso().min(Joi.ref('departure_time')).required(),
+  carrier: Joi.string().max(100).optional(),
+  transport_mode: Joi.string().valid('air', 'sea', 'road', 'rail', 'multimodal').optional()
+});
 
-  calculateProgress() {
-    const statusProgress = {
-      'created': 10,
-      'picked_up': 25,
-      'in_transit': 50,
-      'customs_clearance': 75,
-      'out_for_delivery': 90,
-      'delivered': 100,
-      'delayed': 50,
-      'cancelled': 0
-    };
-    return statusProgress[this.status] || 0;
-  }
-}
+const updateShipmentSchema = Joi.object({
+  origin: Joi.string().max(255).optional(),
+  destination: Joi.string().max(255).optional(),
+  departure_time: Joi.date().iso().optional(),
+  arrival_time: Joi.date().iso().optional(),
+  carrier: Joi.string().max(100).optional(),
+  transport_mode: Joi.string().valid('air', 'sea', 'road', 'rail', 'multimodal').optional(),
+  status: Joi.string().valid('created', 'in_transit', 'delayed', 'delivered', 'cancelled').optional(),
+  current_location: Joi.string().max(500).optional(),
+  actual_departure_time: Joi.date().iso().optional(),
+  estimated_arrival_time: Joi.date().iso().optional()
+});
 
-module.exports = Shipment;
+module.exports = {
+  shipmentSchema,
+  createShipmentSchema,
+  updateShipmentSchema
+};

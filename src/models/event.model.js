@@ -1,44 +1,31 @@
-class TrackingEvent {
-  constructor(data) {
-    this.id = data.id;
-    this.shipmentId = data.shipment_id;
-    this.eventType = data.event_type;
-    this.eventData = data.event_data;
-    this.location = data.location;
-    this.timestamp = data.timestamp;
-    this.source = data.source;
-    this.metadata = data.metadata;
-    this.createdAt = data.created_at;
-  }
+/**
+ * Event Model
+ * Defines the event data structure and validation
+ */
 
-  static fromDatabase(row) {
-    return new TrackingEvent(row);
-  }
+const Joi = require('joi');
 
-  toJSON() {
-    return {
-      event_id: this.id,
-      shipment_id: this.shipmentId,
-      event_type: this.eventType,
-      event_data: this.eventData,
-      location: this.location,
-      timestamp: this.timestamp,
-      source: this.source,
-      metadata: this.metadata,
-      created_at: this.createdAt
-    };
-  }
+const eventSchema = Joi.object({
+  event_id: Joi.string().pattern(/^EVT-[0-9]{4}-[0-9]{6}$/).required(),
+  shipment_id: Joi.string().pattern(/^SHP-[0-9]{4}-[0-9]{6}$/).required(),
+  event_type: Joi.string().valid('departure', 'arrival', 'delay', 'customs_clearance', 'delivery', 'exception').required(),
+  event_time: Joi.date().iso().required(),
+  location: Joi.string().max(255).required(),
+  details: Joi.string().max(1000).optional(),
+  userId: Joi.string().required(),
+  organizationId: Joi.string().required(),
+  created_at: Joi.date().iso().required()
+});
 
-  isCritical() {
-    const criticalEvents = [
-      'delay_detected',
-      'route_deviation',
-      'customs_issue',
-      'carrier_problem',
-      'damage_reported'
-    ];
-    return criticalEvents.includes(this.eventType);
-  }
-}
+const createEventSchema = Joi.object({
+  shipment_id: Joi.string().pattern(/^SHP-[0-9]{4}-[0-9]{6}$/).required(),
+  event_type: Joi.string().valid('departure', 'arrival', 'delay', 'customs_clearance', 'delivery', 'exception').required(),
+  event_time: Joi.date().iso().required(),
+  location: Joi.string().max(255).required(),
+  details: Joi.string().max(1000).optional()
+});
 
-module.exports = TrackingEvent;
+module.exports = {
+  eventSchema,
+  createEventSchema
+};

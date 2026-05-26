@@ -1,178 +1,143 @@
-const database = require('../configs/database.config');
-const Alert = require('../models/alert.model');
-const logger = require('../configs/logger.config');
+/**
+ * Alert Repository
+ * Data access layer for alert operations
+ */
+
+const db = require('../configs/database.config').pool;
+const logger = require('../utils/logger');
 
 class AlertRepository {
-  async create(alertData) {
-    try {
-      const query = `
-        INSERT INTO alerts (
-          shipment_id, alert_type, severity, title, description,
-          status, metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING *
-      `;
-      
-      const values = [
-        alertData.shipment_id,
-        alertData.alert_type,
-        alertData.severity,
-        alertData.title,
-        alertData.description,
-        'active',
-        JSON.stringify(alertData.metadata || {})
-      ];
+  async create(data) {
+    const query = `
+      INSERT INTO alerts (
+        alert_id, shipment_id, severity, description, status,
+        alert_type, prediction_confidence, organization_id, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING *
+    `;
 
-      const result = await database.query(query, values);
-      const alert = Alert.fromDatabase(result.rows[0]);
-      
-      logger.info('Alert created', {
-        alertId: alert.id,
-        shipmentId: alert.shipmentId,
-        severity: alert.severity
-      });
-      
-      return alert;
+    const values = [
+      data.alert_id,
+      data.shipment_id,
+      data.severity,
+      data.description,
+      data.status,
+      data.alert_type || 'manual',
+      data.prediction_confidence || null,
+      data.organizationId,
+      data.created_at
+    ];
+
+    try {
+      const result = await db.query(query, values);
+      return result.rows[0];
     } catch (error) {
-      logger.error('Failed to create alert', { error: error.message });
+      logger.error('Error creating alert:', error);
       throw error;
     }
   }
 
-  async findById(alertId) {
-    try {
-      const query = 'SELECT * FROM alerts WHERE id = $1';
-      const result = await database.query(query, [alertId]);
-      
-      if (result.rows.length === 0) {
-        return null;
-      }
+  async findById(alert_id, organizationId) {
+    const query = `
+      SELECT * FROM alerts
+      WHERE alert_id = $1 AND organization_id = $2
+    `;
 
-      return Alert.fromDatabase(result.rows[0]);
+    try {
+      const result = await db.query(query, [alert_id, organizationId]);
+      return result.rows[0] || null;
     } catch (error) {
-      logger.error('Failed to find alert', { alertId, error: error.message });
+      logger.error('Error finding alert:', error);
       throw error;
     }
   }
 
-  async findActive(filters = {}, pagination = {}) {
+  async findAll(filters, pagination) {
+    const conditions = ['organization_id = $1'];
+    const values = [filters.organizationId];
+    let paramCount = 2;
+
+    if (filters.shipment_id) {
+      conditions.push(`shipment_id = $${paramCount}`);
+      values.push(filters.shipment_id);
+      paramCount++;
+    }
+
+    if (filters.severity) {
+      conditions.push(`severity = $${paramCount}`);
+      values.push(filters.severity);
+      paramCount++;
+    }
+
+    if (filters.status) {
+      conditions.push(`status = $${paramCount}`);
+      values.push(filters.status);
+      paramCount++;
+    }
+
+    const offset = (pagination.page - 1) * pagination.limit;
+    values.push(pagination.limit, offset);
+
+    const query = `
+      SELECT * FROM alerts
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY created_at DESC
+      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*) FROM alerts
+      WHERE ${conditions.join(' AND ')}
+    `;
+
     try {
-      let query = "SELECT * FROM alerts WHERE status IN ('active', 'acknowledged')";
-      const values = [];
-      let paramIndex = 1;
-
-      if (filters.severity) {
-        query += ` AND severity = $${paramIndex++}`;
-        values.push(filters.severity);
-      }
-
-      if (filters.alert_type) {
-        query += ` AND alert_type = $${paramIndex++}`;
-        values.push(filters.alert_type);
-      }
-
-      if (filters.shipment_id) {
-        query += ` AND shipment_id = $${paramIndex++}`;
-        values.push(filters.shipment_id);
-      }
-
-      const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
-      const countResult = await database.query(countQuery, values);
-      const total = parseInt(countResult.rows[0].count);
-
-      query += ' ORDER BY created_at DESC';
-      
-      if (pagination.limit) {
-        query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-        values.push(pagination.limit, pagination.offset || 0);
-      }
-
-      const result = await database.query(query, values);
-      const alerts = result.rows.map(row => Alert.fromDatabase(row));
+      const [dataResult, countResult] = await Promise.all([
+        db.query(query, values),
+        db.query(countQuery, values.slice(0, -2))
+      ]);
 
       return {
-        data: alerts,
-        total,
-        page: pagination.page || 1,
-        limit: pagination.limit || total,
-        totalPages: pagination.limit ? Math.ceil(total / pagination.limit) : 1
+        data: dataResult.rows,
+        pagination: {
+          page: pagination.page,
+          limit: pagination.limit,
+          total: parseInt(countResult.rows[0].count),
+          totalPages: Math.ceil(countResult.rows[0].count / pagination.limit)
+        }
       };
     } catch (error) {
-      logger.error('Failed to find active alerts', { error: error.message });
+      logger.error('Error finding alerts:', error);
       throw error;
     }
   }
 
-  async acknowledge(alertId, userId) {
-    try {
-      const query = `
-        UPDATE alerts
-        SET status = 'acknowledged',
-            acknowledged_by = $1,
-            acknowledged_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2 AND status = 'active'
-        RETURNING *
-      `;
+  async update(alert_id, data, organizationId) {
+    const fields = [];
+    const values = [];
+    let paramCount = 1;
 
-      const result = await database.query(query, [userId, alertId]);
-      
-      if (result.rows.length === 0) {
-        return null;
+    Object.keys(data).forEach(key => {
+      if (data[key] !== undefined) {
+        fields.push(`${key} = $${paramCount}`);
+        values.push(data[key]);
+        paramCount++;
       }
+    });
 
-      logger.info('Alert acknowledged', { alertId, userId });
-      return Alert.fromDatabase(result.rows[0]);
-    } catch (error) {
-      logger.error('Failed to acknowledge alert', { alertId, error: error.message });
-      throw error;
-    }
-  }
+    values.push(alert_id, organizationId);
 
-  async resolve(alertId, userId) {
+    const query = `
+      UPDATE alerts
+      SET ${fields.join(', ')}
+      WHERE alert_id = $${paramCount} AND organization_id = $${paramCount + 1}
+      RETURNING *
+    `;
+
     try {
-      const query = `
-        UPDATE alerts
-        SET status = 'resolved',
-            resolved_by = $1,
-            resolved_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
-        RETURNING *
-      `;
-
-      const result = await database.query(query, [userId, alertId]);
-      
-      if (result.rows.length === 0) {
-        return null;
-      }
-
-      logger.info('Alert resolved', { alertId, userId });
-      return Alert.fromDatabase(result.rows[0]);
+      const result = await db.query(query, values);
+      return result.rows[0] || null;
     } catch (error) {
-      logger.error('Failed to resolve alert', { alertId, error: error.message });
-      throw error;
-    }
-  }
-
-  async getEscalationCandidates() {
-    try {
-      const query = `
-        SELECT * FROM alerts
-        WHERE status IN ('active', 'acknowledged')
-        AND (
-          (severity = 'critical' AND created_at < NOW() - INTERVAL '1 hour')
-          OR (severity = 'high' AND created_at < NOW() - INTERVAL '4 hours')
-          OR (severity = 'medium' AND created_at < NOW() - INTERVAL '12 hours')
-          OR (severity = 'low' AND created_at < NOW() - INTERVAL '24 hours')
-        )
-        ORDER BY severity DESC, created_at ASC
-      `;
-
-      const result = await database.query(query);
-      return result.rows.map(row => Alert.fromDatabase(row));
-    } catch (error) {
-      logger.error('Failed to get escalation candidates', { error: error.message });
+      logger.error('Error updating alert:', error);
       throw error;
     }
   }
