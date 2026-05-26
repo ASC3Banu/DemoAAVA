@@ -1,0 +1,20 @@
+Non-Functional Requirements (NFRs)
+AI-Powered Logistics Monitoring System
+
+Version: 1.0
+Date: December 2024
+Document ID: NFR-LOGISTICS-001
+
+================================================================================
+NON-FUNCTIONAL REQUIREMENTS SPECIFICATION
+================================================================================
+
+This document defines the non-functional requirements for the AI-Powered Logistics Monitoring System based on architectural decisions from ADR AD-1 and enterprise compliance standards.
+
+================================================================================
+SECURITY REQUIREMENTS
+================================================================================
+
+NFR-001: Data Encryption at Rest
+Requirement: All sensitive data must be encrypted at rest using AES-256 encryption
+Rationale: Protect logistics data
