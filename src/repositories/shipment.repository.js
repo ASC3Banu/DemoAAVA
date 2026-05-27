@@ -1,204 +1,73 @@
-const database = require('../configs/database.config');
-const Shipment = require('../models/shipment.model');
-const logger = require('../configs/logger.config');
-const security = require('../configs/security.config');
+const ShipmentModel = require('../models/shipment.model');
+const cacheManager = require('../utils/cache');
+const config = require('../config/env');
 
 class ShipmentRepository {
   async create(shipmentData) {
-    try {
-      const encryptedCargo = security.encryptAES256(shipmentData.cargo_details);
-      
-      const query = `
-        INSERT INTO shipments (
-          tracking_number, origin_location, destination_location,
-          transport_mode, carrier_id, estimated_delivery,
-          cargo_details, cargo_iv, cargo_auth_tag, status, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        RETURNING *
-      `;
-      
-      const values = [
-        shipmentData.tracking_number,
-        shipmentData.origin_location,
-        shipmentData.destination_location,
-        shipmentData.transport_mode,
-        shipmentData.carrier_id,
-        shipmentData.estimated_delivery,
-        encryptedCargo.encrypted,
-        encryptedCargo.iv,
-        encryptedCargo.authTag,
-        'created',
-        shipmentData.created_by
-      ];
-
-      const result = await database.query(query, values);
-      const shipment = Shipment.fromDatabase(result.rows[0]);
-      
-      logger.info('Shipment created', { shipmentId: shipment.id });
-      return shipment;
-    } catch (error) {
-      logger.error('Failed to create shipment', { error: error.message });
-      throw error;
-    }
+    const shipment = await ShipmentModel.create(shipmentData);
+    await cacheManager.set(`shipment:${shipment.id}`, shipment, config.cache.shipmentTTL);
+    await cacheManager.delPattern('shipments:list:*');
+    return shipment;
   }
 
-  async findById(shipmentId) {
-    try {
-      const query = 'SELECT * FROM shipments WHERE id = $1';
-      const result = await database.query(query, [shipmentId]);
-      
-      if (result.rows.length === 0) {
-        return null;
-      }
-
-      const row = result.rows[0];
-      if (row.cargo_details && row.cargo_iv && row.cargo_auth_tag) {
-        row.cargo_details = security.decryptAES256(
-          row.cargo_details,
-          row.cargo_iv,
-          row.cargo_auth_tag
-        );
-      }
-
-      return Shipment.fromDatabase(row);
-    } catch (error) {
-      logger.error('Failed to find shipment', { shipmentId, error: error.message });
-      throw error;
+  async findById(id) {
+    const cached = await cacheManager.get(`shipment:${id}`);
+    if (cached) {
+      return cached;
     }
+
+    const shipment = await ShipmentModel.findById(id);
+    if (shipment) {
+      await cacheManager.set(`shipment:${id}`, shipment, config.cache.shipmentTTL);
+    }
+    return shipment;
   }
 
   async findByTrackingNumber(trackingNumber) {
-    try {
-      const query = 'SELECT * FROM shipments WHERE tracking_number = $1';
-      const result = await database.query(query, [trackingNumber]);
-      
-      if (result.rows.length === 0) {
-        return null;
-      }
-
-      return Shipment.fromDatabase(result.rows[0]);
-    } catch (error) {
-      logger.error('Failed to find shipment by tracking number', {
-        trackingNumber,
-        error: error.message
-      });
-      throw error;
+    const cached = await cacheManager.get(`shipment:tracking:${trackingNumber}`);
+    if (cached) {
+      return cached;
     }
+
+    const shipment = await ShipmentModel.findByTrackingNumber(trackingNumber);
+    if (shipment) {
+      await cacheManager.set(`shipment:tracking:${trackingNumber}`, shipment, config.cache.shipmentTTL);
+    }
+    return shipment;
   }
 
-  async search(filters, pagination) {
-    try {
-      let query = 'SELECT * FROM shipments WHERE 1=1';
-      const values = [];
-      let paramIndex = 1;
-
-      if (filters.status) {
-        query += ` AND status = $${paramIndex++}`;
-        values.push(filters.status);
-      }
-
-      if (filters.carrier_id) {
-        query += ` AND carrier_id = $${paramIndex++}`;
-        values.push(filters.carrier_id);
-      }
-
-      if (filters.transport_mode) {
-        query += ` AND transport_mode = $${paramIndex++}`;
-        values.push(filters.transport_mode);
-      }
-
-      if (filters.origin_location) {
-        query += ` AND origin_location ILIKE $${paramIndex++}`;
-        values.push(`%${filters.origin_location}%`);
-      }
-
-      if (filters.destination_location) {
-        query += ` AND destination_location ILIKE $${paramIndex++}`;
-        values.push(`%${filters.destination_location}%`);
-      }
-
-      const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
-      const countResult = await database.query(countQuery, values);
-      const total = parseInt(countResult.rows[0].count);
-
-      query += ` ORDER BY created_at DESC`;
-      query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-      values.push(pagination.limit, pagination.offset);
-
-      const result = await database.query(query, values);
-      const shipments = result.rows.map(row => Shipment.fromDatabase(row));
-
-      return {
-        data: shipments,
-        total,
-        page: pagination.page,
-        limit: pagination.limit,
-        totalPages: Math.ceil(total / pagination.limit)
-      };
-    } catch (error) {
-      logger.error('Failed to search shipments', { error: error.message });
-      throw error;
+  async update(id, updateData) {
+    const shipment = await ShipmentModel.update(id, updateData);
+    if (shipment) {
+      await cacheManager.del(`shipment:${id}`);
+      await cacheManager.del(`shipment:tracking:${shipment.tracking_number}`);
+      await cacheManager.delPattern('shipments:list:*');
     }
+    return shipment;
   }
 
-  async updateStatus(shipmentId, statusData) {
-    try {
-      const query = `
-        UPDATE shipments
-        SET status = $1, current_location = $2, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $3
-        RETURNING *
-      `;
-      
-      const values = [statusData.status, statusData.location, shipmentId];
-      const result = await database.query(query, values);
-      
-      if (result.rows.length === 0) {
-        return null;
-      }
-
-      logger.info('Shipment status updated', {
-        shipmentId,
-        status: statusData.status
-      });
-      
-      return Shipment.fromDatabase(result.rows[0]);
-    } catch (error) {
-      logger.error('Failed to update shipment status', {
-        shipmentId,
-        error: error.message
-      });
-      throw error;
+  async delete(id) {
+    const result = await ShipmentModel.delete(id);
+    if (result) {
+      await cacheManager.del(`shipment:${id}`);
+      await cacheManager.delPattern('shipments:list:*');
     }
+    return result;
   }
 
-  async delete(shipmentId) {
-    try {
-      const query = 'DELETE FROM shipments WHERE id = $1 RETURNING id';
-      const result = await database.query(query, [shipmentId]);
-      
-      logger.info('Shipment deleted', { shipmentId });
-      return result.rows.length > 0;
-    } catch (error) {
-      logger.error('Failed to delete shipment', { shipmentId, error: error.message });
-      throw error;
+  async findAll(filters, pagination) {
+    const cacheKey = `shipments:list:${JSON.stringify(filters)}:${pagination.page}:${pagination.limit}`;
+    const cached = await cacheManager.get(cacheKey);
+    if (cached) {
+      return cached;
     }
-  }
 
-  async getActiveShipments() {
-    try {
-      const query = `
-        SELECT * FROM shipments
-        WHERE status IN ('created', 'picked_up', 'in_transit', 'customs_clearance', 'out_for_delivery')
-        ORDER BY estimated_delivery ASC
-      `;
-      
-      const result = await database.query(query);
-      return result.rows.map(row => Shipment.fromDatabase(row));
-    } catch (error) {
-      logger.error('Failed to get active shipments', { error: error.message });
-      throw error;
-    }
+    const shipments = await ShipmentModel.findAll(filters, pagination);
+    const total = await ShipmentModel.count(filters);
+
+    const result = { shipments, total };
+    await cacheManager.set(cacheKey, result, config.cache.shipmentTTL);
+    return result;
   }
 }
 
