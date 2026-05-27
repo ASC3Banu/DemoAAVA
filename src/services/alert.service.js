@@ -1,107 +1,87 @@
-/**
- * Alert Service
- * Business logic for alert management
- * 
- * Security: Alert validation, notification security
- * Compliance: Alert tracking, escalation workflows
- */
-
-const alertRepository = require('../repositories/alert.repository');
-const notificationService = require('./notification.service');
+const AlertRepository = require('../repositories/alert.repository');
+const { publishEvent, TOPICS } = require('../config/kafka');
 const logger = require('../utils/logger');
-const { AppError } = require('../utils/error.util');
-const { generateAlertId } = require('../utils/id-generator.util');
 
 class AlertService {
-  /**
-   * Create an alert
-   */
-  async createAlert(data) {
+  async createAlert(alertData) {
     try {
-      const alert_id = generateAlertId();
+      const alert = await AlertRepository.create(alertData);
 
-      const alertData = {
-        ...data,
-        alert_id,
-        status: 'active',
-        created_at: new Date()
-      };
+      await publishEvent(TOPICS.ALERT_CREATED, {
+        id: alert.id,
+        shipment_id: alert.shipment_id,
+        alert_type: alert.alert_type,
+        severity: alert.severity,
+        timestamp: new Date().toISOString()
+      });
 
-      const alert = await alertRepository.create(alertData);
-
-      // Send notifications based on severity
-      await notificationService.sendAlertNotification(alert);
-
-      logger.info(`Alert created: ${alert_id}`);
+      logger.info(`Alert created: ${alert.id} for shipment ${alert.shipment_id}`);
       return alert;
     } catch (error) {
-      logger.error('Error creating alert:', error);
-      throw new AppError('Failed to create alert', 500, 'SERVICE_ERROR');
+      logger.error('Failed to create alert:', error);
+      throw error;
     }
   }
 
-  /**
-   * Get alerts with filters
-   */
-  async getAlerts(filters, pagination) {
+  async getAlertById(id) {
+    const alert = await AlertRepository.findById(id);
+    if (!alert) {
+      throw new Error('Alert not found');
+    }
+    return alert;
+  }
+
+  async updateAlert(id, updateData, userId) {
     try {
-      const result = await alertRepository.findAll(filters, pagination);
-      return result;
+      const alert = await AlertRepository.update(id, updateData);
+      if (!alert) {
+        throw new Error('Alert not found');
+      }
+
+      logger.info(`Alert updated: ${id} by user ${userId}`);
+      return alert;
     } catch (error) {
-      logger.error('Error retrieving alerts:', error);
-      throw new AppError('Failed to retrieve alerts', 500, 'SERVICE_ERROR');
+      logger.error('Failed to update alert:', error);
+      throw error;
     }
   }
 
-  /**
-   * Get alert by ID
-   */
-  async getAlertById(alert_id, organizationId) {
-    try {
-      const alert = await alertRepository.findById(alert_id, organizationId);
-      return alert;
-    } catch (error) {
-      logger.error('Error retrieving alert:', error);
-      throw new AppError('Failed to retrieve alert', 500, 'SERVICE_ERROR');
-    }
+  async getAlertsByShipmentId(shipmentId) {
+    return await AlertRepository.findByShipmentId(shipmentId);
   }
 
-  /**
-   * Acknowledge alert
-   */
-  async acknowledgeAlert(alert_id, userId, organizationId) {
-    try {
-      const alert = await alertRepository.update(alert_id, {
-        status: 'acknowledged',
-        acknowledged_by: userId,
-        acknowledged_at: new Date()
-      }, organizationId);
-
-      logger.info(`Alert acknowledged: ${alert_id} by user ${userId}`);
-      return alert;
-    } catch (error) {
-      logger.error('Error acknowledging alert:', error);
-      throw new AppError('Failed to acknowledge alert', 500, 'SERVICE_ERROR');
-    }
+  async listAlerts(filters, pagination) {
+    return await AlertRepository.findAll(filters, pagination);
   }
 
-  /**
-   * Resolve alert
-   */
-  async resolveAlert(alert_id, userId, organizationId, resolution_notes) {
-    try {
-      const alert = await alertRepository.update(alert_id, {
-        status: 'resolved',
-        resolved_by: userId,
-        resolved_at: new Date(),
-        resolution_notes
-      }, organizationId);
+  async evaluateAlertRules(shipmentId, eventData) {
+    const rules = [
+      {
+        condition: (event) => event.event_type === 'exception',
+        alert: {
+          alert_type: 'exception',
+          severity: 'high',
+          message: 'Exception occurred during shipment'
+        }
+      },
+      {
+        condition: (event) => event.event_type === 'customs' && event.metadata?.hold === true,
+        alert: {
+          alert_type: 'customs_hold',
+          severity: 'medium',
+          message: 'Shipment held at customs'
+        }
+      }
+    ];
 
-      logger.info(`Alert resolved: ${alert_id} by user ${userId}`);
-      return alert;
-    } catch (error) {
-      logger.error('Error resolving alert:', error);
-      throw new AppError('Failed to resolve alert', 500, 'SERVICE_ERROR');
+    for (const rule of rules) {
+      if (rule.condition(eventData)) {
+        await this.createAlert({
+          shipment_id: shipmentId,
+          ...rule.alert,
+          metadata: eventData.metadata
+        });
+      }
     }
   }
 }
