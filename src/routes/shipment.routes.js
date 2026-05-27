@@ -1,36 +1,39 @@
-/**
- * Shipment Routes
- * Defines HTTP routes for shipment operations
- */
-
 const express = require('express');
 const router = express.Router();
-const shipmentController = require('../controllers/shipment.controller');
-const { checkPermission } = require('../middlewares/rbac.middleware');
+const ShipmentController = require('../controllers/shipment.controller');
+const authMiddleware = require('../middleware/auth');
+const validationMiddleware = require('../middleware/validation');
+const schemas = require('../utils/validator');
 
-router.post('/', 
-  checkPermission('shipment:create'),
-  shipmentController.createShipment.bind(shipmentController)
+router.use(authMiddleware.authenticate.bind(authMiddleware));
+
+router.post('/',
+  validationMiddleware.validateBody(schemas.shipment.create),
+  ShipmentController.create
 );
 
-router.get('/:id', 
-  checkPermission('shipment:read'),
-  shipmentController.getShipmentById.bind(shipmentController)
+router.get('/',
+  validationMiddleware.validateQuery(schemas.query.pagination),
+  validationMiddleware.validateQuery(schemas.query.shipmentFilter),
+  ShipmentController.list
 );
 
-router.get('/', 
-  checkPermission('shipment:read'),
-  shipmentController.listShipments.bind(shipmentController)
+router.get('/:id',
+  ShipmentController.getById
 );
 
-router.put('/:id', 
-  checkPermission('shipment:update'),
-  shipmentController.updateShipment.bind(shipmentController)
+router.get('/tracking/:tracking_number',
+  ShipmentController.getByTrackingNumber
 );
 
-router.delete('/:id', 
-  checkPermission('shipment:delete'),
-  shipmentController.deleteShipment.bind(shipmentController)
+router.put('/:id',
+  validationMiddleware.validateBody(schemas.shipment.update),
+  ShipmentController.update
+);
+
+router.delete('/:id',
+  authMiddleware.authorize('admin', 'manager'),
+  ShipmentController.delete
 );
 
 module.exports = router;

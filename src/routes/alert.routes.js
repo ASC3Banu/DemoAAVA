@@ -1,31 +1,34 @@
-/**
- * Alert Routes
- * Defines HTTP routes for alert operations
- */
-
 const express = require('express');
 const router = express.Router();
-const alertController = require('../controllers/alert.controller');
-const { checkPermission } = require('../middlewares/rbac.middleware');
+const AlertController = require('../controllers/alert.controller');
+const authMiddleware = require('../middleware/auth');
+const validationMiddleware = require('../middleware/validation');
+const schemas = require('../utils/validator');
 
-router.get('/', 
-  checkPermission('alert:read'),
-  alertController.getAlerts.bind(alertController)
+router.use(authMiddleware.authenticate.bind(authMiddleware));
+
+router.post('/',
+  authMiddleware.authorize('admin', 'manager'),
+  validationMiddleware.validateBody(schemas.alert.create),
+  AlertController.create
 );
 
-router.get('/:id', 
-  checkPermission('alert:read'),
-  alertController.getAlertById.bind(alertController)
+router.get('/',
+  validationMiddleware.validateQuery(schemas.query.pagination),
+  AlertController.list
 );
 
-router.patch('/:id/acknowledge', 
-  checkPermission('alert:update'),
-  alertController.acknowledgeAlert.bind(alertController)
+router.get('/:id',
+  AlertController.getById
 );
 
-router.patch('/:id/resolve', 
-  checkPermission('alert:update'),
-  alertController.resolveAlert.bind(alertController)
+router.put('/:id',
+  validationMiddleware.validateBody(schemas.alert.update),
+  AlertController.update
+);
+
+router.get('/shipments/:shipment_id/alerts',
+  AlertController.getByShipmentId
 );
 
 module.exports = router;

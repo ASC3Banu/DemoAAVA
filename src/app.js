@@ -1,39 +1,20 @@
-/**
- * AI-Powered Logistics Monitoring System
- * Main Application Entry Point
- * 
- * Security: AES-256 encryption, TLS 1.3, RBAC
- * Compliance: GDPR, PCI-DSS, ISO 27001, SOC 2 Type II
- */
-
 const express = require('express');
-const helmet = require('helmet');
 const cors = require('cors');
+const helmet = require('helmet');
 const compression = require('compression');
-const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
-const { v4: uuidv4 } = require('uuid');
-
-const config = require('./configs/app.config');
-const { errorHandler, notFoundHandler } = require('./middlewares/error.middleware');
-const { auditLogger } = require('./middlewares/audit.middleware');
-const { authenticate } = require('./middlewares/auth.middleware');
-const { validateRequest } = require('./middlewares/validation.middleware');
+const config = require('./config/env');
+const routes = require('./routes');
+const errorHandler = require('./middleware/errorHandler');
+const auditLogger = require('./middleware/auditLogger');
+const sanitizer = require('./middleware/sanitizer');
+const { createRateLimiter } = require('./middleware/rateLimiter');
+const { redisClient } = require('./config/database');
+const { initKafka } = require('./config/kafka');
 const logger = require('./utils/logger');
-
-// Import routes
-const shipmentRoutes = require('./routes/shipment.routes');
-const eventRoutes = require('./routes/event.routes');
-const alertRoutes = require('./routes/alert.routes');
-const dashboardRoutes = require('./routes/dashboard.routes');
-const healthRoutes = require('./routes/health.routes');
 
 const app = express();
 
-// Trust proxy for rate limiting behind load balancers
-app.set('trust proxy', 1);
-
-// Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -50,71 +31,52 @@ app.use(helmet({
   }
 }));
 
-// CORS configuration
-app.use(cors({
-  origin: config.cors.allowedOrigins,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID']
-}));
-
-// Compression
+app.use(cors(config.cors));
 app.use(compression());
-
-// Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request ID middleware
-app.use((req, res, next) => {
-  req.id = req.headers['x-request-id'] || uuidv4();
-  res.setHeader('X-Request-ID', req.id);
-  next();
-});
-
-// Logging middleware
 app.use(morgan('combined', {
   stream: {
-    write: (message) => logger.info(message.trim())
+    write: (message) => logger.http(message.trim())
   }
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: config.rateLimit.windowMs,
-  max: config.rateLimit.max,
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api/', limiter);
+app.use(sanitizer.sanitizeInput.bind(sanitizer));
+app.use(auditLogger.log.bind(auditLogger));
+app.use(createRateLimiter());
 
-// Audit logging middleware
-app.use(auditLogger);
+app.use(`/api/${config.app.apiVersion}`, routes);
 
-// Health check (no authentication required)
-app.use('/health', healthRoutes);
+app.use(errorHandler.notFound.bind(errorHandler));
+app.use(errorHandler.handle.bind(errorHandler));
 
-// API routes with authentication
-app.use('/api/v1/shipments', authenticate, validateRequest, shipmentRoutes);
-app.use('/api/v1/events', authenticate, validateRequest, eventRoutes);
-app.use('/api/v1/alerts', authenticate, validateRequest, alertRoutes);
-app.use('/api/v1/dashboard', authenticate, validateRequest, dashboardRoutes);
+const initializeServices = async () => {
+  try {
+    await redisClient.connect();
+    logger.info('Redis connected successfully');
 
-// 404 handler
-app.use(notFoundHandler);
+    await initKafka();
+    logger.info('Kafka initialized successfully');
 
-// Global error handler
-app.use(errorHandler);
+    logger.info('All services initialized successfully');
+  } catch (error) {
+    logger.error('Failed to initialize services:', error);
+    process.exit(1);
+  }
+};
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM signal received: closing HTTP server');
+initializeServices();
+
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received, shutting down gracefully');
+  await redisClient.quit();
   process.exit(0);
 });
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT signal received: closing HTTP server');
+process.on('SIGINT', async () => {
+  logger.info('SIGINT received, shutting down gracefully');
+  await redisClient.quit();
   process.exit(0);
 });
 

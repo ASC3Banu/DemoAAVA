@@ -1,24 +1,30 @@
 const express = require('express');
 const router = express.Router();
-const EventController = require('../controllers/event.controller');
+const UserController = require('../controllers/user.controller');
 const authMiddleware = require('../middleware/auth');
 const validationMiddleware = require('../middleware/validation');
 const schemas = require('../utils/validator');
 
 router.use(authMiddleware.authenticate.bind(authMiddleware));
 
-router.post('/shipments/:shipment_id/events',
-  validationMiddleware.validateBody(schemas.event.create),
-  EventController.create
+router.get('/profile',
+  UserController.getProfile
 );
 
-router.get('/events/:id',
-  EventController.getById
+router.put('/profile',
+  validationMiddleware.validateBody(schemas.user.update),
+  UserController.updateProfile
 );
 
-router.get('/shipments/:shipment_id/events',
+router.get('/',
+  authMiddleware.authorize('admin'),
   validationMiddleware.validateQuery(schemas.query.pagination),
-  EventController.getByShipmentId
+  UserController.list
+);
+
+router.get('/:id',
+  authMiddleware.authorize('admin', 'manager'),
+  UserController.getById
 );
 
 module.exports = router;
