@@ -1,133 +1,71 @@
-/**
- * Event Model
- * AI-Powered Logistics Monitoring System
- * 
- * Represents logistics tracking events with audit trail and encryption
- */
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const mongoose = require('mongoose');
-const crypto = require('crypto');
-
-const eventSchema = new mongoose.Schema({
-  eventId: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true,
-    default: () => crypto.randomUUID()
+const Event = sequelize.define('Event', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
   },
-  shipmentId: {
-    type: String,
-    required: true,
-    index: true,
-    ref: 'Shipment'
+  shipment_id: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'shipments',
+      key: 'id'
+    },
+    onDelete: 'CASCADE'
   },
-  eventType: {
-    type: String,
-    required: true,
-    enum: ['pickup', 'departure', 'arrival', 'delivery', 'delay', 'exception', 'customs_clearance', 'in_transit'],
-    index: true
+  event_type: {
+    type: DataTypes.ENUM('pickup', 'departure', 'arrival', 'delivery', 'delay', 'exception'),
+    allowNull: false
   },
   location: {
-    address: { type: String, required: true },
-    coordinates: {
-      latitude: { type: Number, min: -90, max: 90 },
-      longitude: { type: Number, min: -180, max: 180 }
-    },
-    locationCode: String,
-    facilityType: String
+    type: DataTypes.JSONB,
+    allowNull: false
   },
   timestamp: {
-    type: Date,
-    required: true,
-    index: true
-  },
-  status: {
-    type: String,
-    required: true,
-    enum: ['completed', 'in_progress', 'failed', 'pending']
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   },
   description: {
-    type: String,
-    maxlength: 1000
+    type: DataTypes.TEXT,
+    allowNull: true
   },
-  sourceSystem: {
-    type: String,
-    required: true,
-    enum: ['carrier_api', 'port_system', 'warehouse_system', 'customs_system', 'manual_entry', 'iot_sensor']
+  metadata: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
   },
-  eventData: {
-    type: Map,
-    of: mongoose.Schema.Types.Mixed
+  source: {
+    type: DataTypes.STRING(100),
+    allowNull: false,
+    defaultValue: 'system'
   },
-  // Security and audit fields
-  createdBy: {
-    type: String,
-    required: true
+  severity: {
+    type: DataTypes.ENUM('info', 'warning', 'error', 'critical'),
+    defaultValue: 'info'
   },
-  verificationStatus: {
-    type: String,
-    enum: ['verified', 'unverified', 'disputed'],
-    default: 'unverified'
+  processed: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   },
-  verifiedBy: String,
-  verifiedAt: Date,
-  // Data lineage for compliance
-  dataLineage: {
-    sourceIp: String,
-    sourceUser: String,
-    sourceTimestamp: Date,
-    processingTimestamp: Date,
-    transformations: [String]
-  },
-  // Encryption metadata
-  encryptionVersion: { type: String, default: 'v1' },
-  checksumHash: String
+  processed_at: {
+    type: DataTypes.DATE,
+    allowNull: true
+  }
 }, {
+  tableName: 'events',
   timestamps: true,
-  collection: 'events'
+  paranoid: true,
+  underscored: true,
+  indexes: [
+    { fields: ['shipment_id'] },
+    { fields: ['event_type'] },
+    { fields: ['timestamp'] },
+    { fields: ['processed'] },
+    { fields: ['severity'] }
+  ]
 });
-
-// Compound indexes for query optimization
-eventSchema.index({ shipmentId: 1, timestamp: -1 });
-eventSchema.index({ eventType: 1, timestamp: -1 });
-eventSchema.index({ sourceSystem: 1, createdAt: -1 });
-
-// Pre-save middleware for checksum generation
-eventSchema.pre('save', function(next) {
-  // Generate checksum for data integrity
-  const dataString = JSON.stringify({
-    shipmentId: this.shipmentId,
-    eventType: this.eventType,
-    timestamp: this.timestamp,
-    location: this.location
-  });
-  
-  this.checksumHash = crypto.createHash('sha256').update(dataString).digest('hex');
-  next();
-});
-
-// Method to verify event integrity
-eventSchema.methods.verifyIntegrity = function() {
-  const dataString = JSON.stringify({
-    shipmentId: this.shipmentId,
-    eventType: this.eventType,
-    timestamp: this.timestamp,
-    location: this.location
-  });
-  
-  const currentHash = crypto.createHash('sha256').update(dataString).digest('hex');
-  return currentHash === this.checksumHash;
-};
-
-// Static method for event aggregation
-eventSchema.statics.getEventTimeline = async function(shipmentId) {
-  return this.find({ shipmentId })
-    .sort({ timestamp: 1 })
-    .select('-eventData -dataLineage')
-    .lean();
-};
-
-const Event = mongoose.model('Event', eventSchema);
 
 module.exports = Event;
