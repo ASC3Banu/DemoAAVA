@@ -3,4 +3,18 @@
 
 ## API Overview
 
-This document outlines the API contracts for the Logistics Monitoring System
+### Base URL
+- Production: `https://api.logistics-monitor.com/v1`
+- Staging: `https://api-staging.logistics-monitor.com/v1`
+- Development: `https://api-dev.logistics-monitor.com/v1`
+
+### Authentication
+- **Type**: OAuth 2.0 Bearer Token / JWT
+- **Header**: `Authorization: Bearer <token>`
+- **Token Expiry**: 24 hours
+- **Refresh Token**: Available for long-lived sessions
+
+### Common Response Format
+```json
+{
+  "success": true
