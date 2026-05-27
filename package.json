@@ -1,7 +1,7 @@
 {
   "name": "logistics-monitoring-system",
   "version": "1.0.0",
-  "description": "AI-Powered Logistics Monitoring System - Backend API",
+  "description": "AI-Powered Logistics Monitoring System with Real-time Tracking",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -12,42 +12,39 @@
     "test:integration": "jest --testPathPattern=tests/integration",
     "lint": "eslint src/**/*.js",
     "lint:fix": "eslint src/**/*.js --fix",
-    "migrate": "sequelize-cli db:migrate",
-    "migrate:undo": "sequelize-cli db:migrate:undo",
-    "seed": "sequelize-cli db:seed:all"
+    "db:migrate": "node src/database/migrate.js",
+    "db:seed": "node src/database/seed.js"
   },
   "keywords": [
     "logistics",
-    "monitoring",
     "tracking",
+    "monitoring",
     "ai",
-    "predictions",
-    "alerts"
+    "analytics"
   ],
-  "author": "Your Organization",
+  "author": "Logistics Monitoring Team",
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
-    "helmet": "^7.1.0",
-    "cors": "^2.8.5",
-    "compression": "^1.7.4",
-    "dotenv": "^16.3.1",
-    "sequelize": "^6.35.0",
     "pg": "^8.11.3",
-    "pg-hstore": "^2.3.4",
-    "ioredis": "^5.3.2",
+    "redis": "^4.6.10",
     "kafkajs": "^2.2.4",
+    "@influxdata/influxdb-client": "^1.33.0",
     "jsonwebtoken": "^9.0.2",
     "bcrypt": "^5.1.1",
     "joi": "^17.11.0",
-    "express-validator": "^7.0.1",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "compression": "^1.7.4",
+    "morgan": "^1.10.0",
+    "winston": "^3.11.0",
     "express-rate-limit": "^7.1.5",
     "rate-limit-redis": "^4.2.0",
-    "winston": "^3.11.0",
-    "uuid": "^9.0.1",
+    "validator": "^13.11.0",
     "axios": "^1.6.2",
-    "speakeasy": "^2.0.0",
-    "qrcode": "^1.5.3"
+    "uuid": "^9.0.1",
+    "prom-client": "^15.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2",
@@ -55,8 +52,7 @@
     "supertest": "^6.3.3",
     "eslint": "^8.55.0",
     "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-plugin-import": "^2.29.0",
-    "sequelize-cli": "^6.6.2"
+    "eslint-plugin-import": "^2.29.0"
   },
   "engines": {
     "node": ">=18.0.0",

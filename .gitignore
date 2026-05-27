@@ -16,7 +16,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Runtime data
-pids/
+pids
 *.pid
 *.seed
 *.pid.lock
@@ -31,26 +31,18 @@ coverage/
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
+Thumbs.db
 
 # Build
 dist/
 build/
 
-# Certificates and keys
-*.pem
-*.key
-*.cert
-*.crt
-
-# Database
-*.sqlite
-*.db
+# Testing
+.jest/
 
 # Temporary files
 tmp/
 temp/
-
-# OS
-Thumbs.db
-.DS_Store
