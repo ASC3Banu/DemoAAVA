@@ -1,0 +1,6 @@
+# API Contract Outline
+# Logistics Monitoring System
+
+## API Overview
+
+This document outlines the API contracts for the Logistics Monitoring System
