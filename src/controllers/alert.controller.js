@@ -1,144 +1,70 @@
-/**
- * Alert Controller
- * Handles HTTP requests for alert management operations
- * 
- * Security: Input validation, RBAC enforcement
- * Compliance: Audit logging, alert tracking
- */
-
-const alertService = require('../services/alert.service');
+const AlertService = require('../services/alert.service');
+const responseFormatter = require('../utils/responseFormatter');
+const paginationHelper = require('../utils/pagination');
 const logger = require('../utils/logger');
-const { ApiResponse } = require('../utils/response.util');
-const { AppError } = require('../utils/error.util');
 
 class AlertController {
-  /**
-   * Get alerts
-   * @route GET /api/v1/alerts
-   */
-  async getAlerts(req, res, next) {
+  async create(req, res, next) {
     try {
-      const organizationId = req.user.organizationId;
-      const { shipment_id, severity, status, page = 1, limit = 20 } = req.query;
+      const alert = await AlertService.createAlert(req.body);
+      res.status(201).json(responseFormatter.created(alert, 'Alert created successfully'));
+    } catch (error) {
+      logger.error('Create alert error:', error);
+      next(error);
+    }
+  }
 
-      // Validate severity if provided
-      if (severity && !['low', 'medium', 'high', 'critical'].includes(severity)) {
-        throw new AppError('Invalid severity level', 400, 'VALIDATION_ERROR');
+  async getById(req, res, next) {
+    try {
+      const alert = await AlertService.getAlertById(req.params.id);
+      res.json(responseFormatter.success(alert));
+    } catch (error) {
+      if (error.message === 'Alert not found') {
+        return res.status(404).json(responseFormatter.notFound('Alert'));
       }
+      next(error);
+    }
+  }
 
+  async update(req, res, next) {
+    try {
+      const alert = await AlertService.updateAlert(req.params.id, req.body, req.user.id);
+      res.json(responseFormatter.updated(alert, 'Alert updated successfully'));
+    } catch (error) {
+      if (error.message === 'Alert not found') {
+        return res.status(404).json(responseFormatter.notFound('Alert'));
+      }
+      next(error);
+    }
+  }
+
+  async getByShipmentId(req, res, next) {
+    try {
+      const alerts = await AlertService.getAlertsByShipmentId(req.params.shipment_id);
+      res.json(responseFormatter.success(alerts));
+    } catch (error) {
+      logger.error('Get alerts error:', error);
+      next(error);
+    }
+  }
+
+  async list(req, res, next) {
+    try {
+      const { page, limit } = paginationHelper.validatePaginationParams(req.query.page, req.query.limit);
+      const pagination = paginationHelper.paginate(req.query, page, limit);
+      
       const filters = {
-        organizationId,
-        shipment_id,
-        severity,
-        status
+        status: req.query.status,
+        severity: req.query.severity,
+        alert_type: req.query.alert_type,
+        assigned_to: req.query.assigned_to
       };
 
-      const result = await alertService.getAlerts(filters, {
-        page: parseInt(page),
-        limit: parseInt(limit)
-      });
-
-      logger.info('Alerts retrieved', {
-        userId: req.user.id,
-        organizationId,
-        count: result.data.length,
-        requestId: req.id
-      });
-
-      return res.status(200).json(
-        ApiResponse.success(result, 'Alerts retrieved successfully')
-      );
+      const result = await AlertService.listAlerts(filters, pagination);
+      
+      res.json(paginationHelper.formatResponse(result.alerts, result.total, page, limit));
     } catch (error) {
-      logger.error('Error retrieving alerts:', error);
-      next(error);
-    }
-  }
-
-  /**
-   * Get alert by ID
-   * @route GET /api/v1/alerts/:id
-   */
-  async getAlertById(req, res, next) {
-    try {
-      const { id } = req.params;
-      const organizationId = req.user.organizationId;
-
-      const alert = await alertService.getAlertById(id, organizationId);
-
-      if (!alert) {
-        throw new AppError('Alert not found', 404, 'NOT_FOUND');
-      }
-
-      return res.status(200).json(
-        ApiResponse.success(alert, 'Alert retrieved successfully')
-      );
-    } catch (error) {
-      logger.error('Error retrieving alert:', error);
-      next(error);
-    }
-  }
-
-  /**
-   * Acknowledge alert
-   * @route PATCH /api/v1/alerts/:id/acknowledge
-   */
-  async acknowledgeAlert(req, res, next) {
-    try {
-      const { id } = req.params;
-      const userId = req.user.id;
-      const organizationId = req.user.organizationId;
-
-      const alert = await alertService.acknowledgeAlert(id, userId, organizationId);
-
-      if (!alert) {
-        throw new AppError('Alert not found', 404, 'NOT_FOUND');
-      }
-
-      logger.info(`Alert acknowledged: ${id}`, {
-        userId,
-        organizationId,
-        alertId: id,
-        requestId: req.id
-      });
-
-      return res.status(200).json(
-        ApiResponse.success(alert, 'Alert acknowledged successfully')
-      );
-    } catch (error) {
-      logger.error('Error acknowledging alert:', error);
-      next(error);
-    }
-  }
-
-  /**
-   * Resolve alert
-   * @route PATCH /api/v1/alerts/:id/resolve
-   */
-  async resolveAlert(req, res, next) {
-    try {
-      const { id } = req.params;
-      const userId = req.user.id;
-      const organizationId = req.user.organizationId;
-      const { resolution_notes } = req.body;
-
-      const alert = await alertService.resolveAlert(id, userId, organizationId, resolution_notes);
-
-      if (!alert) {
-        throw new AppError('Alert not found', 404, 'NOT_FOUND');
-      }
-
-      logger.info(`Alert resolved: ${id}`, {
-        userId,
-        organizationId,
-        alertId: id,
-        requestId: req.id
-      });
-
-      return res.status(200).json(
-        ApiResponse.success(alert, 'Alert resolved successfully')
-      );
-    } catch (error) {
-      logger.error('Error resolving alert:', error);
+      logger.error('List alerts error:', error);
       next(error);
     }
   }
