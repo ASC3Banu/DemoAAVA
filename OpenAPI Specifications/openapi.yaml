@@ -12,5 +12,4 @@ info:
     - Integration with external logistics systems
     
     **Security**: All endpoints require authentication via Bearer token (JWT).
-    
-    **Compliance**: This API adheres to GDPR
+    **Rate Limiting**: 10
