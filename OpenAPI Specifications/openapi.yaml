@@ -2,4 +2,15 @@ openapi: 3.0.3
 info:
   title: AI-Powered Logistics Monitoring System API
   description: |
-    Comprehensive API for global shipment tracking
+    Comprehensive API specification for the AI-Powered Logistics Monitoring System.
+    
+    This API provides endpoints for:
+    - Real-time shipment tracking across multiple regions
+    - AI-powered predictive analytics for delay detection
+    - Automated alert and escalation management
+    - Operational dashboards and analytics
+    - Integration with external logistics systems
+    
+    **Security**: All endpoints require authentication via Bearer token (JWT).
+    
+    **Compliance**: This API adheres to GDPR
