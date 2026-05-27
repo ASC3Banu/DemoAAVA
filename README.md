@@ -2,4 +2,4 @@
 
 ## Overview
 
-Comprehensive backend system for global logistics monitoring with AI-powered insights
+Enterprise-grade Node.js backend for global logistics monitoring with AI-powered predictions
